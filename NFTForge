@@ -1,0 +1,96 @@
+import requests
+import pandas as pd
+import matplotlib.pyplot as plt
+from datetime import datetime
+
+class NFTForge:
+    def __init__(self, api_key: str):
+        self.api_url = 'https://api.opensea.io/api/v1'
+        self.api_key = api_key
+        self.headers = {
+            'X-API-KEY': api_key
+        }
+
+    def get_collections(self, limit: int = 50) -> pd.DataFrame:
+        """Fetches the list of NFT collections."""
+        url = f"{self.api_url}/collections"
+        params = {
+            'offset': 0,
+            'limit': limit
+        }
+        response = requests.get(url, headers=self.headers, params=params)
+        collections = response.json()['collections']
+        return pd.DataFrame(collections)
+
+    def get_collection_data(self, slug: str) -> dict:
+        """Fetches data for a specific NFT collection."""
+        url = f"{self.api_url}/collection/{slug}"
+        response = requests.get(url, headers=self.headers)
+        return response.json()['collection']
+
+    def get_collection_stats(self, slug: str) -> dict:
+        """Fetches statistics for a specific NFT collection."""
+        url = f"{self.api_url}/collection/{slug}/stats"
+        response = requests.get(url, headers=self.headers)
+        return response.json()['stats']
+
+    def get_historical_data(self, slug: str, days: int) -> pd.DataFrame:
+        """Fetches historical data for a specific NFT collection."""
+        end_time = datetime.now()
+        start_time = end_time - pd.to_timedelta(days, unit='d')
+        url = f"{self.api_url}/events"
+        params = {
+            'collection_slug': slug,
+            'event_type': 'successful',
+            'occurred_after': int(start_time.timestamp()),
+            'occurred_before': int(end_time.timestamp()),
+            'offset': 0,
+            'limit': 300
+        }
+        response = requests.get(url, headers=self.headers, params=params)
+        events = response.json()['asset_events']
+        data = [
+            {
+                'timestamp': datetime.fromtimestamp(event['transaction']['timestamp']),
+                'price': float(event['total_price']) / 1e18,
+                'token_id': event['asset']['token_id']
+            }
+            for event in events
+        ]
+        df = pd.DataFrame(data)
+        df.set_index('timestamp', inplace=True)
+        return df
+
+    def plot_price_trends(self, slug: str, days: int):
+        """Plots historical price trends for a specific NFT collection."""
+        df = self.get_historical_data(slug, days)
+        if df.empty:
+            print("No historical data found.")
+            return
+
+        plt.figure(figsize=(12, 6))
+        df['price'].plot()
+        plt.title(f'{slug.capitalize()} Price Trend')
+        plt.xlabel('Date')
+        plt.ylabel('Price (ETH)')
+        plt.grid(True)
+        plt.show()
+
+# Example Usage
+if __name__ == "__main__":
+    api_key = 'YOUR_OPENSEA_API_KEY'  # Replace with your OpenSea API key
+    nft_forge = NFTForge(api_key)
+
+    # Fetch and Display NFT Collections
+    collections = nft_forge.get_collections()
+    print("Available NFT Collections:")
+    print(collections[['slug', 'name', 'primary_asset_contracts']].head())
+
+    # Fetch and Display Collection Data
+    collection_slug = 'cryptopunks'  # Replace with the collection slug you want to analyze
+    collection_data = nft_forge.get_collection_data(collection_slug)
+    print(f"Data for collection {collection_slug.capitalize()}:")
+    print(collection_data)
+
+    # Plot Historical Price Trends
+    nft_forge.plot_price_trends(slug=collection_slug, days=30)  # Last 30 days
